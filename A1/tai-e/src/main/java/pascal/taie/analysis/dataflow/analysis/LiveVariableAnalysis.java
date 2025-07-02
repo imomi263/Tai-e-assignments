@@ -25,8 +25,13 @@ package pascal.taie.analysis.dataflow.analysis;
 import pascal.taie.analysis.dataflow.fact.SetFact;
 import pascal.taie.analysis.graph.cfg.CFG;
 import pascal.taie.config.AnalysisConfig;
+import pascal.taie.ir.exp.LValue;
+import pascal.taie.ir.exp.RValue;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Stmt;
+
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Implementation of classic live variable analysis.
@@ -48,23 +53,42 @@ public class LiveVariableAnalysis extends
     @Override
     public SetFact<Var> newBoundaryFact(CFG<Stmt> cfg) {
         // TODO - finish me
-        return null;
+        return new SetFact<Var>();
     }
 
     @Override
     public SetFact<Var> newInitialFact() {
         // TODO - finish me
-        return null;
+        return new SetFact<Var>();
     }
 
     @Override
     public void meetInto(SetFact<Var> fact, SetFact<Var> target) {
         // TODO - finish me
+        target.union(fact);
     }
 
     @Override
     public boolean transferNode(Stmt stmt, SetFact<Var> in, SetFact<Var> out) {
         // TODO - finish me
+        List<RValue> used=stmt.getUses();
+        SetFact<Var> tmp=new SetFact<>();
+        tmp.set(out);
+        Optional<LValue> def=stmt.getDef();
+        def.ifPresent(lValue -> tmp.remove((Var) lValue));
+        // 判断是否能够转为Var类
+        used.forEach(used1->{
+            if(used1 instanceof Var){
+                tmp.add((Var)used1);
+            }
+            
+        });
+
+        if(in.equals(tmp)) {
+            return true;
+        }else{
+            in.set(tmp);
+        }
         return false;
     }
 }
