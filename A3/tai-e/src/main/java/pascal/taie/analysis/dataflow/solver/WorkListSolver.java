@@ -26,6 +26,9 @@ import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.cfg.CFG;
 
+import java.util.LinkedList;
+import java.util.Queue;
+
 class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
     WorkListSolver(DataflowAnalysis<Node, Fact> analysis) {
@@ -35,10 +38,48 @@ class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
     @Override
     protected void doSolveForward(CFG<Node> cfg, DataflowResult<Node, Fact> result) {
         // TODO - finish me
+        Queue<Node> worklist = new LinkedList<>();
+        cfg.forEach(worklist::add);
+
+        while (!worklist.isEmpty()) {
+            Node node = worklist.remove();
+
+            Fact inOut=result.getInFact(node);
+
+            for(Node predNode:cfg.getPredsOf(node)){
+                // 获得前驱节点
+                analysis.meetInto(result.getOutFact(predNode),inOut);
+            }
+
+            if(analysis.transferNode(node,inOut,result.getOutFact(node))){
+                // true说明发生改变了
+                worklist.add(node);
+
+            }
+        }
     }
 
     @Override
     protected void doSolveBackward(CFG<Node> cfg, DataflowResult<Node, Fact> result) {
         // TODO - finish me
+        boolean flag=true;
+        do{
+            flag=true;
+            for(Node node : cfg.getNodes()){
+                if(!cfg.isExit(node)){
+                    Fact BNode = result.getOutFact(node);
+                    for(Node predNode : cfg.getSuccsOf(node)){
+                        // outB
+                        Fact SNode = result.getInFact(predNode);
+                        analysis.meetInto(SNode,BNode);
+
+                        // inB
+                        if(!analysis.transferNode(node,result.getInFact(node),BNode)){
+                            flag=false;
+                        }
+                    }
+                }
+            }
+        }while(!flag);
     }
 }

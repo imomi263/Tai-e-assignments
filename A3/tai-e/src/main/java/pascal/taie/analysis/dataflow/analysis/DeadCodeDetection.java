@@ -33,21 +33,13 @@ import pascal.taie.analysis.graph.cfg.CFGBuilder;
 import pascal.taie.analysis.graph.cfg.Edge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.exp.ArithmeticExp;
-import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.CastExp;
-import pascal.taie.ir.exp.FieldAccess;
-import pascal.taie.ir.exp.NewExp;
-import pascal.taie.ir.exp.RValue;
-import pascal.taie.ir.exp.Var;
+import pascal.taie.ir.exp.*;
 import pascal.taie.ir.stmt.AssignStmt;
 import pascal.taie.ir.stmt.If;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.ir.stmt.SwitchStmt;
 
-import java.util.Comparator;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 public class DeadCodeDetection extends MethodAnalysis {
 
@@ -71,6 +63,151 @@ public class DeadCodeDetection extends MethodAnalysis {
         Set<Stmt> deadCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
         // TODO - finish me
         // Your task is to recognize dead code in ir and add it to deadCode
+        Set<Stmt> liveCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
+        // 先找到哪里不可达
+        Stmt entryStmt = cfg.getEntry();
+        if(entryStmt==null) {
+            return deadCode;
+        }
+        // 应该先找活的代码，死的是取相反值
+        Queue<Stmt>stmtQueue=new LinkedList<>();
+        stmtQueue.add(entryStmt);
+        while(!stmtQueue.isEmpty()) {
+            Stmt stmt=stmtQueue.remove();
+            if(liveCode.contains(stmt)) {
+                continue;
+            }
+            // 把该语句添加进去
+            liveCode.add(stmt);
+            if(stmt instanceof If) {
+                ConditionExp exp = ((If)stmt).getCondition();
+                Value value = ConstantPropagation.evaluate(exp,constants.getInFact(stmt));
+                if(value.isConstant()){
+                    if(value.getConstant() == 0){
+                        for(Edge<Stmt> edge:cfg.getOutEdgesOf(stmt)){
+                            if(edge.getKind() == Edge.Kind.IF_FALSE){
+                                // 把活的那个添加进去
+                                //liveCode.add(edge.getTarget());
+                                stmtQueue.add(edge.getTarget());
+                            }
+                        }
+                    }else{
+                        for(Edge<Stmt> edge:cfg.getOutEdgesOf(stmt)){
+                            if(edge.getKind() == Edge.Kind.IF_TRUE){
+                                //liveCode.add(edge.getTarget());
+                                stmtQueue.add(edge.getTarget());
+                            }
+                        }
+                    }
+                }else{
+                    // 这里不是固定的，就都添加进去
+                    cfg.getOutEdgesOf(stmt).forEach(edge->{
+                        //liveCode.add(edge.getTarget());
+                        stmtQueue.add(edge.getTarget());
+                    });
+                }
+            }else if(stmt instanceof SwitchStmt) {
+                SwitchStmt t=(SwitchStmt)stmt;
+                Value value=ConstantPropagation.evaluate(t.getVar(),constants.getInFact(stmt));
+                if(value.isConstant()){
+                    boolean f=false;
+                    for(Edge<Stmt> edge:cfg.getOutEdgesOf(stmt)){
+                        if(edge.getKind() == Edge.Kind.SWITCH_CASE){
+                            int num=edge.getCaseValue();
+                            if(value.getConstant() == num){
+                                f=true;
+                                //liveCode.add(edge.getTarget());
+                                stmtQueue.add(edge.getTarget());
+                            }
+                        }
+                    }
+                    if(!f){
+                        //liveCode.add(((SwitchStmt) stmt).getDefaultTarget());
+                        stmtQueue.add(((SwitchStmt) stmt).getDefaultTarget());
+                    }
+                }else{
+                    // switch语句不是固定的
+                    for(Edge<Stmt> edge:cfg.getOutEdgesOf(stmt)){
+                        //liveCode.add(edge.getTarget());
+                        stmtQueue.add(edge.getTarget());
+                    }
+                }
+            }else{
+                // 不是分支语句，就把所有后续的语句都添加进去
+                //liveCode.add(t);
+                stmtQueue.addAll(cfg.getSuccsOf(stmt));
+
+            }
+        }
+        // 已经找到了所有的活语句
+        // 不在活语句的加入到死代码中
+        for(Stmt stmt:cfg.getNodes()){
+            if(!liveCode.contains(stmt)) {
+                deadCode.add(stmt);
+            }
+        }
+
+        // 接下来寻找无用赋值语句
+        for(Stmt stmt:cfg.getNodes()){
+            if(stmt instanceof AssignStmt) {
+                AssignStmt t=(AssignStmt)stmt;
+                LValue lvalue = t.getLValue();
+                RValue rvalue = t.getRValue();
+                if(!liveVars.getOutFact(stmt).contains((Var)lvalue)) {
+                    if(hasNoSideEffect(rvalue)) {
+                        deadCode.add(stmt);
+                    }
+                }
+            }
+        }
+//        Queue<Stmt> stmtQueue = new LinkedList<>();
+//        stmtQueue.add(entryStmt);
+//        while(!stmtQueue.isEmpty()) {
+//            entryStmt = stmtQueue.remove();
+//            if(deadCode.contains(entryStmt)) {
+//                //stmtQueue.addAll(cfg.getSuccsOf(entryStmt));
+//                continue;
+//            }
+//
+//            if(deadCode.containsAll(cfg.getPredsOf(entryStmt))){
+//                // 一个语句的所有前面的语句都是死代码，该语句也是死代码
+//                deadCode.add(entryStmt);
+//            }
+//            if(entryStmt instanceof If){
+//                ConditionExp exp = ((If)entryStmt).getCondition();
+//                Value value = ConstantPropagation.evaluate(exp,constants.getInFact(entryStmt));
+//                if(value.isConstant()){
+//                    if(value.getConstant() == 0){
+//                        // 这里是为假，为真的语句就添加到死代码里面
+//                        for(Edge<Stmt> edge:cfg.getOutEdgesOf(entryStmt)){
+//                            if(edge.getKind() == Edge.Kind.IF_TRUE){
+//                                deadCode.add(edge.getTarget());
+//                                // 把所有的都添加进去
+//                                stmtQueue.addAll(cfg.getSuccsOf(entryStmt));
+//                            }
+//                        }
+//                    }else{
+//                        for(Edge<Stmt> edge:cfg.getOutEdgesOf(entryStmt)){
+//                            if(edge.getKind() == Edge.Kind.IF_FALSE){
+//                                deadCode.add(edge.getTarget());
+//                                stmtQueue.addAll(cfg.getSuccsOf(entryStmt));
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//            if(entryStmt instanceof SwitchStmt){
+//                SwitchStmt t=(SwitchStmt)entryStmt;
+//                Value value=ConstantPropagation.evaluate(t.getVar(),constants.getInFact(entryStmt));
+//                for(Edge<Stmt> edge:cfg.getOutEdgesOf(entryStmt)){
+//                    if(edge.getKind() == Edge.Kind.SWITCH_CASE){
+//                        int num=edge.getCaseValue();
+//
+//                    }
+//                }
+//            }
+//        }
+
         return deadCode;
     }
 
