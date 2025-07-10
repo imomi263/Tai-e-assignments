@@ -24,11 +24,15 @@ package pascal.taie.analysis.dataflow.inter;
 
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.icfg.ICFG;
+import pascal.taie.analysis.graph.icfg.ICFGEdge;
+import pascal.taie.language.classes.JMethod;
 import pascal.taie.util.collection.SetQueue;
 
+import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Solver for inter-procedural data-flow analysis.
@@ -60,9 +64,79 @@ class InterSolver<Method, Node, Fact> {
 
     private void initialize() {
         // TODO - finish me
+
+        for(Node node:icfg){
+            if(icfg.getPredsOf(node).isEmpty()){
+                //result.setInFact(node,analysis.newBoundaryFact(node));
+                result.setOutFact(node,analysis.newBoundaryFact(node));
+            }else{
+                result.setOutFact(node,analysis.newInitialFact());
+            }
+            result.setInFact(node,analysis.newInitialFact());
+        }
     }
 
     private void doSolve() {
         // TODO - finish me
+
+        workList = new LinkedList<>();
+        // 这里的顺序也不能修改
+        // 从最前面那个开始跑
+        for(Node node:icfg){
+            if(icfg.getPredsOf(node).isEmpty()){
+                workList.add(node);
+            }
+        }
+        for(Node node:icfg){
+            if(!workList.contains(node)){
+                workList.add(node);
+            }
+        }
+//        while(!workList.isEmpty()){
+//            Node node = workList.remove();
+//
+//            Fact in = result.getInFact(node);
+//
+//            for(ICFGEdge<Node> predEdge : icfg.getInEdgesOf(node)){
+//                Node predNode = predEdge.getSource();
+//                Fact tmpFact = analysis.transferEdge(predEdge,result.getOutFact(predNode));
+//                analysis.meetInto(tmpFact, in);
+//            }
+//
+//            if(analysis.transferNode(node,in,result.getOutFact(node))){
+//                // 结果这里的Node节点遍历顺序有关
+//                // 于是就当节点更新后，将其前后的节点全部重新跑一遍
+//                workList.add(node);
+//                workList.addAll(icfg.getPredsOf(node));
+//                workList.addAll(icfg.getSuccsOf(node));
+//            }
+//            //else{
+//            //    System.out.println("---------------finished---------"+node+result.getInFact(node)+result.getOutFact(node));
+//            //}
+//        }
+        boolean flag=false;
+        while(true){
+            for(Node node:icfg){
+                boolean t;
+                Fact in = result.getInFact(node);
+
+                for(ICFGEdge<Node> predEdge : icfg.getInEdgesOf(node)){
+                    Node predNode = predEdge.getSource();
+                    //if(!icfg.getSuccsOf(predNode).contains(node)){continue;}
+                    Fact tmpFact = analysis.transferEdge(predEdge,result.getOutFact(predNode));
+                    analysis.meetInto(tmpFact, in);
+                }
+
+                t=analysis.transferNode(node,in,result.getOutFact(node));
+                if(t){
+                    flag=true;
+                }
+            }
+            if(!flag){
+                break;
+            }
+            flag=false;
+        }
+
     }
 }

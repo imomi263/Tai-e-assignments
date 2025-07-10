@@ -23,16 +23,17 @@
 package pascal.taie.analysis.graph.callgraph;
 
 import pascal.taie.World;
+import pascal.taie.ir.IR;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.classes.Subsignature;
 
-import java.util.ArrayDeque;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Implementation of the CHA algorithm.
@@ -50,7 +51,39 @@ class CHABuilder implements CGBuilder<Invoke, JMethod> {
     private CallGraph<Invoke, JMethod> buildCallGraph(JMethod entry) {
         DefaultCallGraph callGraph = new DefaultCallGraph();
         callGraph.addEntryMethod(entry);
+        callGraph.addReachableMethod(entry);
         // TODO - finish me
+
+        Set<JMethod> reachableMethods = new HashSet<>();
+        Queue<JMethod> workList = new LinkedList<>();
+        workList.add(entry);
+        //reachableMethods.add(entry);
+        while(!workList.isEmpty()) {
+            JMethod current = workList.remove();
+            if(!reachableMethods.contains(current)) {
+                reachableMethods.add(current);
+                IR ir = current.getIR();
+                Set<Invoke> invokeSet= new HashSet<>();
+
+                for(Stmt stmt : ir.getStmts()) {
+                    if(stmt instanceof Invoke) {
+                        invokeSet.add((Invoke)stmt);
+                    }
+                }
+
+                for(Invoke invoke : invokeSet) {
+
+                    Set<JMethod> resolves = resolve(invoke);
+                    resolves.forEach(method ->{
+                        // 添加边
+                        callGraph.addEdge(new Edge<>(CallGraphs.getCallKind(invoke),invoke,method));
+                        callGraph.addReachableMethod(method);
+                        // 添加到工作集
+                        workList.add(method);
+                    });
+                }
+            }
+        }
         return callGraph;
     }
 
@@ -59,7 +92,42 @@ class CHABuilder implements CGBuilder<Invoke, JMethod> {
      */
     private Set<JMethod> resolve(Invoke callSite) {
         // TODO - finish me
-        return null;
+        Set<JMethod> methods = new HashSet<>();
+        Subsignature subsignature = callSite.getMethodRef().getSubsignature();
+        // <C: T foo(P,Q,R)>
+        JClass jClass=callSite.getMethodRef().getDeclaringClass();
+        if(callSite.isStatic()) {
+
+            methods.add(hierarchy.getJREMethod("<"+jClass.toString()+": "+subsignature.toString()+">"));
+        }
+        if(callSite.isSpecial()){
+            JClass clazz= callSite.getMethodRef().getDeclaringClass();
+            methods.add(dispatch(clazz,subsignature));
+        }
+        if(callSite.isVirtual()){
+
+            JClass clazz=callSite.getMethodRef().getDeclaringClass();
+            Set<JClass> classzSet = new HashSet<>();
+            Queue<JClass> queue = new LinkedList<>();
+            queue.add(clazz);
+            // 找到所有的子类（直接和间接）
+            while(!queue.isEmpty()){
+                JClass t = queue.remove();
+                classzSet.add(t);
+                for(JClass c : hierarchy.getDirectSubclassesOf(t)){
+                    if(queue.contains(c)){
+                        continue;
+                    }
+                    classzSet.add(c);
+                    queue.add(c);
+                }
+            }
+            classzSet.forEach(c->
+            {
+                methods.add(dispatch(c,subsignature));
+            });
+        }
+        return methods;
     }
 
     /**
@@ -70,6 +138,16 @@ class CHABuilder implements CGBuilder<Invoke, JMethod> {
      */
     private JMethod dispatch(JClass jclass, Subsignature subsignature) {
         // TODO - finish me
+
+        Collection<JMethod> declaredMethods = jclass.getDeclaredMethods();
+        for(JMethod method : declaredMethods) {
+            if(subsignature.equals(method.getSubsignature())) {
+                return method;
+            }
+        }
+        if(jclass.getSuperClass() != null) {
+            return dispatch(jclass.getSuperClass(), subsignature);
+        }
         return null;
     }
 }

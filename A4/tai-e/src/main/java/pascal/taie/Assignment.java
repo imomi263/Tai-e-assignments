@@ -41,4 +41,6 @@ public class Assignment {
             System.out.println("Usage: -cp <CLASS_PATH> -m <CLASS_NAME>");
         }
     }
+    // MultiIntArgs测试中第二个 goto 10还是有异常
+    // 边界初始化还存在问题
 }
