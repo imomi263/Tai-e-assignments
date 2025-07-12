@@ -40,5 +40,7 @@ public class Assignment {
         } else {
             System.out.println("Usage: -cp <CLASS_PATH> -m <CLASS_NAME>");
         }
+
+        // 通过所有本地测试样例
     }
 }
