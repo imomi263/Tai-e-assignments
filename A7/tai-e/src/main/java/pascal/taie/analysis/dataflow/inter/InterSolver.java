@@ -24,8 +24,11 @@ package pascal.taie.analysis.dataflow.inter;
 
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.icfg.ICFG;
+import pascal.taie.analysis.graph.icfg.ICFGEdge;
+import pascal.taie.ir.stmt.Copy;
 import pascal.taie.util.collection.SetQueue;
 
+import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -43,7 +46,7 @@ class InterSolver<Method, Node, Fact> {
 
     private DataflowResult<Node, Fact> result;
 
-    private Queue<Node> workList;
+    public Queue<Node> workList;
 
     InterSolver(InterDataflowAnalysis<Node, Fact> analysis,
                 ICFG<Method, Node> icfg) {
@@ -60,9 +63,40 @@ class InterSolver<Method, Node, Fact> {
 
     private void initialize() {
         // TODO - finish me
+        workList = new LinkedList<>();
+        icfg.entryMethods().forEach(entryMethod -> {
+            Node node = icfg.getEntryOf(entryMethod);
+            workList.add(node);
+            result.setOutFact(node, analysis.newBoundaryFact(node));
+        });
+
+        for(Node node :icfg.getNodes()){
+            result.setInFact(node, analysis.newInitialFact());
+            if(!workList.contains(node)){
+                workList.add(node);
+                result.setOutFact(node, analysis.newInitialFact());
+            }
+        }
     }
 
     private void doSolve() {
         // TODO - finish me
+
+
+        while(!workList.isEmpty()){
+            Node node = workList.remove();
+            //System.out.println("-----------"+workList.size());
+            boolean t;
+            Fact in = result.getInFact(node);
+            for(ICFGEdge<Node> predEdge : icfg.getInEdgesOf(node)){
+                Node predNode = predEdge.getSource();
+                Fact tmpFact = analysis.transferEdge(predEdge,result.getOutFact(predNode));
+                analysis.meetInto(tmpFact, in);
+            }
+            t=analysis.transferNode(node,in,result.getOutFact(node));
+            if(t){
+                workList.addAll(icfg.getSuccsOf(node));
+            }
+        }
     }
 }

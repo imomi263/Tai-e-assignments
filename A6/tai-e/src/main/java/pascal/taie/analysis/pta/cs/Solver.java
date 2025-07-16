@@ -142,7 +142,6 @@ class Solver {
             PointsToSet pts = PointsToSetFactory.make(csObj);
             workList.addEntry(x, pts);
             return null;
-
         }
 
         @Override
